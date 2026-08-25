@@ -470,3 +470,116 @@ class TestLabelConverterVocValidation(unittest.TestCase):
         self.assertEqual(data["shapes"], [])
         warning.assert_called_once()
         self.assertIn("bndbox/ymax", warning.call_args.args[0])
+
+
+class TestLabelConverterXlsxExport(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp_dir.cleanup)
+        self.converter = LabelConverter()
+
+    def _write_label_file(self, shapes):
+        label_file = os.path.join(self.temp_dir.name, "label.json")
+        data = {
+            "imagePath": "image.jpg",
+            "imageWidth": 100,
+            "imageHeight": 80,
+            "shapes": shapes,
+        }
+        with open(label_file, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        return label_file
+
+    def _export(self, shapes, input_file=None):
+        if input_file is None:
+            input_file = self._write_label_file(shapes)
+        output_file = os.path.join(self.temp_dir.name, "label.xlsx")
+        self.converter.custom_to_xlsx(input_file, output_file)
+        return output_file
+
+    def _read_rows(self, output_file):
+        from openpyxl import load_workbook
+
+        workbook = load_workbook(output_file)
+        sheet = workbook.active
+        return list(sheet.iter_rows(values_only=True))
+
+    def test_header_row(self):
+        rows = self._read_rows(self._export([]))
+        self.assertEqual(
+            rows[0],
+            ("name", "scores", "xmin", "ymin", "xmax", "ymax"),
+        )
+        self.assertEqual(len(rows), 1)
+
+    def test_exports_rectangle_boxes_with_score(self):
+        shapes = [
+            {
+                "label": "person",
+                "shape_type": "rectangle",
+                "points": [[10, 20], [30, 40]],
+                "score": 0.86,
+            },
+            {
+                "label": "car",
+                "shape_type": "rectangle",
+                "points": [[0.5, 1.5], [5, 6]],
+                "score": 0.5,
+            },
+        ]
+        rows = self._read_rows(self._export(shapes))
+        self.assertEqual(rows[1], ("person", 0.86, 10, 20, 30, 40))
+        self.assertEqual(rows[2], ("car", 0.5, 0, 1, 5, 6))
+
+    def test_missing_score_leaves_cell_empty(self):
+        shapes = [
+            {
+                "label": "person",
+                "shape_type": "rectangle",
+                "points": [[1, 2], [3, 4]],
+            }
+        ]
+        rows = self._read_rows(self._export(shapes))
+        self.assertEqual(rows[1], ("person", None, 1, 2, 3, 4))
+
+    def test_skips_non_rectangle_shapes(self):
+        shapes = [
+            {
+                "label": "person",
+                "shape_type": "rectangle",
+                "points": [[1, 2], [3, 4]],
+            },
+            {
+                "label": "road",
+                "shape_type": "polygon",
+                "points": [[0, 0], [9, 0], [9, 9], [0, 9]],
+            },
+            {
+                "label": "box",
+                "shape_type": "rotation",
+                "points": [[0, 0], [4, 0], [4, 4], [0, 4]],
+                "score": 0.9,
+            },
+        ]
+        rows = self._read_rows(self._export(shapes))
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(rows[1], ("person", None, 1, 2, 3, 4))
+
+    def test_normalizes_diagonal_point_order(self):
+        shapes = [
+            {
+                "label": "person",
+                "shape_type": "rectangle",
+                "points": [[30, 40], [10, 20]],
+            }
+        ]
+        rows = self._read_rows(self._export(shapes))
+        self.assertEqual(rows[1], ("person", None, 10, 20, 30, 40))
+
+    def test_none_input_file_writes_header_only(self):
+        rows = self._read_rows(self._export([], input_file=None))
+        self.assertEqual(
+            rows[0],
+            ("name", "scores", "xmin", "ymin", "xmax", "ymax"),
+        )
+        self.assertEqual(len(rows), 1)

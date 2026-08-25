@@ -1,3 +1,4 @@
+import json
 import os
 from unittest import mock
 
@@ -6,15 +7,24 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 import pytest
 from PyQt6 import QtWidgets
 
+from anylabeling.views.labeling.utils import export as export_module
 from anylabeling.views.labeling.utils.export import (
     _export_mask_files,
     _show_yolo_export_error,
+    export_xlsx_annotation,
     export_yolo_annotation,
 )
 from anylabeling.views.labeling.label_converter import (
     PoseClassError,
     PoseGroupError,
 )
+
+
+def test_xlsx_export_is_reexported_from_utils_package():
+    # LabelingWidget calls utils.export_xlsx_annotation; the package
+    # __init__ must re-export it from the export module.
+    assert hasattr(export_module, "export_xlsx_annotation")
+    assert export_module.export_xlsx_annotation is export_xlsx_annotation
 
 
 @pytest.mark.parametrize(
@@ -242,3 +252,95 @@ def test_yolo_export_error_dialog_shows_actionable_guidance(
         message_box_class.StandardButton.Ok
     )
     widget.load_file.assert_called_once_with(str(failed_image))
+
+
+def test_xlsx_export_writes_one_file_per_image(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    image_file = image_dir / "image.png"
+    image_file.touch()
+    label_file = image_dir / "image.json"
+    label_file.write_text(
+        json.dumps(
+            {
+                "imagePath": "image.png",
+                "imageWidth": 100,
+                "imageHeight": 80,
+                "shapes": [
+                    {
+                        "label": "person",
+                        "shape_type": "rectangle",
+                        "points": [[10, 20], [30, 40]],
+                        "score": 0.86,
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    widget = QtWidgets.QWidget()
+    widget.filename = str(image_file)
+    widget.image_list = [str(image_file)]
+    widget.output_dir = str(image_dir)
+    widget.may_continue = mock.Mock(return_value=True)
+
+    with (
+        mock.patch.object(QtWidgets.QDialog, "exec", return_value=1),
+        mock.patch(
+            "anylabeling.views.labeling.utils.export.Popup"
+        ) as popup_class,
+    ):
+        export_xlsx_annotation(widget)
+
+    # Default path: sibling <dir>/Annotations next to the image folder.
+    annotations_dir = tmp_path / "Annotations"
+    assert annotations_dir.is_dir()
+    out_file = annotations_dir / "image.xlsx"
+    assert out_file.is_file()
+
+    from openpyxl import load_workbook
+
+    sheet = load_workbook(str(out_file)).active
+    rows = list(sheet.iter_rows(values_only=True))
+    assert rows[0] == ("name", "scores", "xmin", "ymin", "xmax", "ymax")
+    assert rows[1] == ("person", 0.86, 10, 20, 30, 40)
+    popup_class.return_value.show_popup.assert_called()
+    widget.close()
+    app.processEvents()
+
+
+def test_xlsx_export_reports_error(tmp_path):
+    app = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
+    image_dir = tmp_path / "images"
+    image_dir.mkdir()
+    image_file = image_dir / "image.png"
+    image_file.touch()
+
+    widget = QtWidgets.QWidget()
+    widget.filename = str(image_file)
+    widget.image_list = [str(image_file)]
+    widget.output_dir = str(image_dir)
+    widget.may_continue = mock.Mock(return_value=True)
+    converter = mock.Mock()
+    converter.custom_to_xlsx.side_effect = RuntimeError("boom")
+    popup = mock.Mock()
+
+    with (
+        mock.patch.object(QtWidgets.QDialog, "exec", return_value=1),
+        mock.patch(
+            "anylabeling.views.labeling.utils.export.LabelConverter",
+            return_value=converter,
+        ),
+        mock.patch(
+            "anylabeling.views.labeling.utils.export.Popup",
+            return_value=popup,
+        ),
+    ):
+        export_xlsx_annotation(widget)
+
+    converter.custom_to_xlsx.assert_called_once()
+    popup.show_popup.assert_called()
+    widget.close()
+    app.processEvents()

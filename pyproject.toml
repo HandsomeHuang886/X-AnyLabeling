@@ -92,6 +92,7 @@ dependencies = [
     "requests",
     "darkdetect>=0.8.0",
     "matplotlib",
+    "openpyxl>=3.1.0",
 ]
 
 # Optional dependencies ------------------------------------------------------------------------------------------------

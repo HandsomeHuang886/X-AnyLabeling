@@ -1812,6 +1812,43 @@ class LabelConverter:
                     f"{x0} {y0} {x1} {y1} {x2} {y2} {x3} {y3} {label} {int(difficult)}\n"
                 )
 
+    def custom_to_xlsx(self, input_file, output_file):
+        """Export rectangle detection boxes to an xlsx table.
+
+        Sheet columns: name, scores, xmin, ymin, xmax, ymax.
+        Shapes without a score leave the scores cell empty. A ``None``
+        input file writes a header-only workbook (no label available).
+        """
+        data = self.read_json(input_file) if input_file else {}
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        sheet = workbook.active
+        sheet.title = "Detections"
+        sheet.append(["name", "scores", "xmin", "ymin", "xmax", "ymax"])
+        for shape in data.get("shapes", []):
+            if shape.get("shape_type") != "rectangle":
+                continue
+            points = shape.get("points") or []
+            if len(points) < 2:
+                continue
+            xs = [point[0] for point in points]
+            ys = [point[1] for point in points]
+            score = shape.get("score")
+            if not isinstance(score, (int, float)):
+                score = None
+            sheet.append(
+                [
+                    shape.get("label", ""),
+                    score,
+                    int(min(xs)),
+                    int(min(ys)),
+                    int(max(xs)),
+                    int(max(ys)),
+                ]
+            )
+        workbook.save(output_file)
+
     def write_empty_mask(
         self,
         output_file: str,

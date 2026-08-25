@@ -14,6 +14,7 @@ from .export import (
     export_odvg_annotation,
     export_pporc_annotation,
     export_vlm_r1_ovd_annotation,
+    export_xlsx_annotation,
 )
 from .general import (
     gradient_text,

@@ -1724,6 +1724,13 @@ class LabelingWidget(LabelDialog):
             icon=upload_export_icon,
             tip=self.tr("Export Custom VLM-R1 OVD Annotations"),
         )
+        export_xlsx_annotation = action(
+            self.tr("XLSX"),
+            lambda: utils.export_xlsx_annotation(self),
+            None,
+            icon=upload_export_icon,
+            tip=self.tr("Export Custom XLSX Detection Annotations"),
+        )
 
         # Group zoom controls into a list for easier toggling.
         zoom_actions = (
@@ -1892,6 +1899,7 @@ class LabelingWidget(LabelDialog):
             export_pporc_rec_annotation=export_pporc_rec_annotation,
             export_pporc_kie_annotation=export_pporc_kie_annotation,
             export_vlm_r1_ovd_annotation=export_vlm_r1_ovd_annotation,
+            export_xlsx_annotation=export_xlsx_annotation,
             zoom=zoom,
             zoom_in=zoom_in,
             zoom_out=zoom_out,
@@ -2187,6 +2195,8 @@ class LabelingWidget(LabelDialog):
                 export_pporc_kie_annotation,
                 None,
                 export_vlm_r1_ovd_annotation,
+                None,
+                export_xlsx_annotation,
             ),
         )
         utils.add_actions(
