@@ -42,6 +42,23 @@ def get_supported_image_extensions():
     return sorted(extensions)
 
 
+def convert_image_to_png(src_path, dst_path):
+    """Load an image file and re-save it as PNG to dst_path.
+
+    Applies EXIF orientation so the saved PNG matches how the image is
+    displayed. Returns True on success and False on failure.
+    """
+    try:
+        ensure_pillow_heif_registered()
+        with PIL.Image.open(src_path) as img:
+            img = PIL.ImageOps.exif_transpose(img)
+            img.save(dst_path, format="PNG")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to convert {src_path} to PNG: {e}")
+        return False
+
+
 def img_data_to_pil(img_data):
     ensure_pillow_heif_registered()
     f = io.BytesIO()

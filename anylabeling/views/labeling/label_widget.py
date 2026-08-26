@@ -48,6 +48,7 @@ from .utils.style import (
     get_checkbox_indicator_style,
     get_dialog_style,
     get_dock_style,
+    get_export_option_style,
     get_ok_btn_style,
     get_panel_style,
     get_plain_text_edit_style,
@@ -1024,6 +1025,15 @@ class LabelingWidget(LabelDialog):
             icon="overview",
             tip=self.tr("Show annotations statistics"),
         )
+        initialize = action(
+            self.tr("Initialize"),
+            self.initialize,
+            None,
+            icon=None,
+            tip=self.tr(
+                "Save all top-level images in the current folder as PNG"
+            ),
+        )
         save_crop = action(
             self.tr("Save Cropped Image"),
             lambda: utils.save_crop(self),
@@ -1833,6 +1843,7 @@ class LabelingWidget(LabelDialog):
             paste=paste,
             toggle_shape_lock=toggle_shape_lock,
             overview=overview,
+            initialize=initialize,
             save_visualization_image=save_visualization_image,
             save_visualization_video=save_visualization_video,
             undo_last_point=undo_last_point,
@@ -2105,6 +2116,7 @@ class LabelingWidget(LabelDialog):
             self.menus.tool,
             (
                 overview,
+                initialize,
                 None,
                 save_crop,
                 save_visualization_image,
@@ -3363,6 +3375,145 @@ class LabelingWidget(LabelDialog):
     def overview(self):
         if self.filename:
             OverviewDialog(parent=self)
+
+    def initialize(self):
+        """Save top-level images of the current directory as PNG."""
+        if not self.filename:
+            popup = Popup(
+                self.tr("Please load an image folder before proceeding!"),
+                self,
+                msec=3000,
+                icon=new_icon_path("warning", "svg"),
+            )
+            popup.show_popup(self, popup_height=36, position="center")
+            return
+
+        workdir = self.last_open_dir
+        if not workdir or not osp.isdir(workdir):
+            self.error_message(
+                self.tr("Initialize"),
+                self.tr(
+                    "Please open a directory first before using Initialize."
+                ),
+            )
+            return
+
+        workdir = osp.abspath(workdir)
+        workdir_name = osp.basename(osp.normpath(workdir))
+        default_output_dir = osp.realpath(osp.join(workdir, "..", "init"))
+
+        # Let the user type or browse an output directory.
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(self.tr("Select Output Directory"))
+        dialog.setMinimumWidth(500)
+        dialog.setStyleSheet(get_export_option_style())
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        path_layout = QtWidgets.QVBoxLayout()
+        path_label = QtWidgets.QLabel(self.tr("Output directory"))
+        path_layout.addWidget(path_label)
+
+        path_input_layout = QtWidgets.QHBoxLayout()
+        path_input_layout.setSpacing(8)
+
+        path_edit = QtWidgets.QLineEdit()
+        path_edit.setText(default_output_dir)
+        path_edit.setPlaceholderText(self.tr("Select Output Directory"))
+
+        def browse_output_path():
+            path = QtWidgets.QFileDialog.getExistingDirectory(
+                self,
+                self.tr("Select Output Directory"),
+                path_edit.text(),
+                QtWidgets.QFileDialog.Option.DontUseNativeDialog,
+            )
+            if path:
+                path_edit.setText(path)
+
+        path_button = QtWidgets.QPushButton(self.tr("Browse"))
+        path_button.clicked.connect(browse_output_path)
+        path_button.setStyleSheet(get_cancel_btn_style())
+
+        path_input_layout.addWidget(path_edit)
+        path_input_layout.addWidget(path_button)
+        path_layout.addLayout(path_input_layout)
+        layout.addLayout(path_layout)
+
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.setContentsMargins(0, 16, 0, 0)
+        button_layout.setSpacing(8)
+
+        cancel_button = QtWidgets.QPushButton(self.tr("Cancel"))
+        cancel_button.clicked.connect(dialog.reject)
+        cancel_button.setStyleSheet(get_cancel_btn_style())
+
+        ok_button = QtWidgets.QPushButton(self.tr("OK"))
+        ok_button.clicked.connect(dialog.accept)
+        ok_button.setStyleSheet(get_ok_btn_style())
+
+        button_layout.addStretch()
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(ok_button)
+        layout.addLayout(button_layout)
+
+        dialog.setLayout(layout)
+        result = dialog.exec()
+        if not result:
+            return
+
+        output_dir = path_edit.text().strip()
+        if not output_dir:
+            self.error_message(
+                self.tr("Initialize"),
+                self.tr("Output directory cannot be empty."),
+            )
+            return
+
+        os.makedirs(output_dir, exist_ok=True)
+
+        extensions = utils.get_supported_image_extensions()
+        try:
+            image_files = sorted(
+                osp.join(workdir, name)
+                for name in os.listdir(workdir)
+                if osp.isfile(osp.join(workdir, name))
+                and name.lower().endswith(tuple(extensions))
+            )
+        except OSError as e:
+            logger.error(f"Failed to list directory {workdir}: {e}")
+            image_files = []
+
+        if not image_files:
+            self.error_message(
+                self.tr("Initialize"),
+                self.tr("No image files found in the current directory."),
+            )
+            return
+
+        converted = 0
+        failed = []
+        for src in image_files:
+            base = osp.splitext(osp.basename(src))[0]
+            dst = osp.join(output_dir, "%s_%s.png" % (workdir_name, base))
+            if utils.convert_image_to_png(src, dst):
+                converted += 1
+            else:
+                failed.append(osp.basename(src))
+
+        if converted:
+            QtWidgets.QMessageBox.information(
+                self,
+                self.tr("Initialize"),
+                self.tr("%s image(s) saved to %s.") % (converted, output_dir),
+            )
+        if failed:
+            logger.warning(
+                f"Initialize: failed to convert {len(failed)} file(s): "
+                f"{', '.join(failed)}"
+            )
 
     def digit_shortcut_manager(self):
         digit_shortcut_dialog = DigitShortcutDialog(parent=self)

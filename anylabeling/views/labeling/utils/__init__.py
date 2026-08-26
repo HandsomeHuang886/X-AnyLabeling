@@ -24,6 +24,7 @@ from .general import (
 )
 from .image import (
     check_img_exif,
+    convert_image_to_png,
     ensure_pillow_heif_registered,
     get_pil_img_dim,
     img_arr_to_b64,
