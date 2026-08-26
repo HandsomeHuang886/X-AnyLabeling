@@ -187,6 +187,8 @@ def _show_visualization_dialog(self, export_type):
     save_texts_checkbox.setChecked(self.canvas.show_texts)
     save_masks_checkbox = QCheckBox(self.tr("Save Semi-transparent Masks"))
     save_masks_checkbox.setChecked(self.canvas.show_masks)
+    save_object_indexes_checkbox = QCheckBox(self.tr("Save Object Indexes"))
+    save_object_indexes_checkbox.setChecked(False)
     skip_empty_files_checkbox = QCheckBox(self.tr("Skip Empty Files"))
     skip_empty_files_checkbox.setChecked(False)
 
@@ -196,6 +198,7 @@ def _show_visualization_dialog(self, export_type):
         save_groups_checkbox,
         save_texts_checkbox,
         save_masks_checkbox,
+        save_object_indexes_checkbox,
         skip_empty_files_checkbox,
     ]
     for index, widget in enumerate(option_widgets):
@@ -257,6 +260,7 @@ def _show_visualization_dialog(self, export_type):
         "show_groups": save_groups_checkbox.isChecked(),
         "show_texts": save_texts_checkbox.isChecked(),
         "show_masks": save_masks_checkbox.isChecked(),
+        "show_object_indexes": save_object_indexes_checkbox.isChecked(),
         "skip_empty": skip_empty_files_checkbox.isChecked(),
         "image_range": image_range,
     }
@@ -492,6 +496,7 @@ def _render_current_image(self, options):
         show_groups=options["show_groups"],
         show_texts=options["show_texts"],
         show_masks=options["show_masks"],
+        show_object_indexes=options["show_object_indexes"],
     )
 
 
@@ -512,6 +517,7 @@ def _render_image_file(self, image_file, options, shapes=None):
         show_groups=options["show_groups"],
         show_texts=options["show_texts"],
         show_masks=options["show_masks"],
+        show_object_indexes=options["show_object_indexes"],
     )
 
 

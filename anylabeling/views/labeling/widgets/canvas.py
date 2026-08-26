@@ -205,6 +205,7 @@ class Canvas(
         self.show_texts = True
         self.show_labels = True
         self.show_scores = True
+        self.show_object_indexes = False
         self.show_degrees = False
         self.show_attributes = True
         self.show_linking = True
@@ -4499,6 +4500,73 @@ class Canvas(
                 p.drawText(text_pos, label_text)
             p.restore()
 
+        # Draw object indexes
+        if self.show_object_indexes:
+            label_transform = p.transform()
+            p.save()
+            p.resetTransform()
+            p.setFont(QtGui.QFont("Arial", self.label_font_size))
+            fm = QtGui.QFontMetrics(p.font())
+            object_index = 0
+            indexes = []
+            for shape in self.shapes:
+                if not shape.visible:
+                    continue
+                # Only rectangle detection boxes appear in the XLSX export,
+                # so they are the only shapes that get an object index. The
+                # numbering follows the export row order (JSON file order).
+                if shape.shape_type != "rectangle" or len(shape.points) < 2:
+                    continue
+                object_index += 1
+                try:
+                    bbox = shape.bounding_rect()
+                except IndexError:
+                    continue
+                top_left = label_transform.map(bbox.topLeft())
+                index_text = str(object_index)
+                text_rect = fm.tightBoundingRect(index_text)
+                padding_x = 4
+                top_padding = 2
+                rect_width = text_rect.width() + 2 * padding_x
+                # Height hugs the digits: the tight glyph height plus a small
+                # pad on top, so the badge does not tower over the numbers.
+                rect_height = text_rect.height() + top_padding
+                # The badge sits flush against the box's top edge. If the
+                # number would extend past the image bounds it is clamped
+                # inward and may overlap the box instead.
+                rect = QtCore.QRect(
+                    int(top_left.x()),
+                    int(top_left.y()) - rect_height,
+                    rect_width,
+                    rect_height,
+                )
+                if self.pixmap is not None:
+                    max_x = self.pixmap.width() - rect_width
+                    max_y = self.pixmap.height() - rect_height
+                    if max_x < 0 or max_y < 0:
+                        continue
+                    rect.moveLeft(max(0, min(rect.x(), max_x)))
+                    rect.moveTop(max(0, min(rect.y(), max_y)))
+                # Digits (no descenders) are drawn on the badge baseline, so
+                # placing the baseline at the badge bottom keeps them right
+                # against the box with no vertical gap.
+                text_pos = QtCore.QPoint(
+                    rect.x() + padding_x,
+                    rect.y() + rect_height,
+                )
+                indexes.append((shape, rect, text_pos, index_text))
+
+            pen = QtGui.QPen(QtGui.QColor("#FFA500"), 8, Qt.PenStyle.SolidLine)
+            p.setPen(pen)
+            for shape, rect, _, _ in indexes:
+                p.fillRect(rect, shape.line_color)
+
+            pen = QtGui.QPen(QtGui.QColor("#000000"), 8, Qt.PenStyle.SolidLine)
+            p.setPen(pen)
+            for _, _, text_pos, index_text in indexes:
+                p.drawText(text_pos, index_text)
+            p.restore()
+
         # Draw mouse coordinates
         if self.cross_line_show:
             pen = QtGui.QPen(
@@ -4747,6 +4815,7 @@ class Canvas(
         show_groups=False,
         show_texts=True,
         show_masks=True,
+        show_object_indexes=False,
     ):
         old_shape_scale = Shape.scale
         scratch = type(self)(
@@ -4770,6 +4839,7 @@ class Canvas(
         scratch.show_groups = show_groups
         scratch.show_texts = show_texts
         scratch.show_masks = show_masks
+        scratch.show_object_indexes = show_object_indexes
         scratch.show_degrees = self.show_degrees
         scratch.show_attributes = self.show_attributes
         scratch.show_linking = self.show_linking
