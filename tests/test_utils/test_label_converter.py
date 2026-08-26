@@ -508,7 +508,7 @@ class TestLabelConverterXlsxExport(unittest.TestCase):
         rows = self._read_rows(self._export([]))
         self.assertEqual(
             rows[0],
-            ("name", "scores", "xmin", "ymin", "xmax", "ymax"),
+            ("index", "name", "score", "xmin", "ymin", "xmax", "ymax"),
         )
         self.assertEqual(len(rows), 1)
 
@@ -528,8 +528,8 @@ class TestLabelConverterXlsxExport(unittest.TestCase):
             },
         ]
         rows = self._read_rows(self._export(shapes))
-        self.assertEqual(rows[1], ("person", 0.86, 10, 20, 30, 40))
-        self.assertEqual(rows[2], ("car", 0.5, 0, 1, 5, 6))
+        self.assertEqual(rows[1], (1, "person", 0.86, 10, 20, 30, 40))
+        self.assertEqual(rows[2], (2, "car", 0.5, 0, 1, 5, 6))
 
     def test_missing_score_leaves_cell_empty(self):
         shapes = [
@@ -540,7 +540,7 @@ class TestLabelConverterXlsxExport(unittest.TestCase):
             }
         ]
         rows = self._read_rows(self._export(shapes))
-        self.assertEqual(rows[1], ("person", None, 1, 2, 3, 4))
+        self.assertEqual(rows[1], (1, "person", None, 1, 2, 3, 4))
 
     def test_skips_non_rectangle_shapes(self):
         shapes = [
@@ -563,7 +563,39 @@ class TestLabelConverterXlsxExport(unittest.TestCase):
         ]
         rows = self._read_rows(self._export(shapes))
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[1], ("person", None, 1, 2, 3, 4))
+        self.assertEqual(rows[1], (1, "person", None, 1, 2, 3, 4))
+
+    def test_index_counts_only_exported_boxes(self):
+        shapes = [
+            {
+                "label": "skip",
+                "shape_type": "polygon",
+                "points": [[0, 0], [9, 0], [9, 9], [0, 9]],
+            },
+            {
+                "label": "first",
+                "shape_type": "rectangle",
+                "points": [[1, 2], [3, 4]],
+            },
+            {
+                "label": "skip2",
+                "shape_type": "rotation",
+                "points": [[0, 0], [4, 0], [4, 4], [0, 4]],
+                "score": 0.9,
+            },
+            {
+                "label": "second",
+                "shape_type": "rectangle",
+                "points": [[5, 6], [7, 8]],
+                "score": 0.2,
+            },
+        ]
+        rows = self._read_rows(self._export(shapes))
+        self.assertEqual(len(rows), 3)
+        # index stays sequential over exported boxes even when other
+        # shape types are interspersed.
+        self.assertEqual(rows[1], (1, "first", None, 1, 2, 3, 4))
+        self.assertEqual(rows[2], (2, "second", 0.2, 5, 6, 7, 8))
 
     def test_normalizes_diagonal_point_order(self):
         shapes = [
@@ -574,12 +606,34 @@ class TestLabelConverterXlsxExport(unittest.TestCase):
             }
         ]
         rows = self._read_rows(self._export(shapes))
-        self.assertEqual(rows[1], ("person", None, 10, 20, 30, 40))
+        self.assertEqual(rows[1], (1, "person", None, 10, 20, 30, 40))
 
     def test_none_input_file_writes_header_only(self):
         rows = self._read_rows(self._export([], input_file=None))
         self.assertEqual(
             rows[0],
-            ("name", "scores", "xmin", "ymin", "xmax", "ymax"),
+            ("index", "name", "score", "xmin", "ymin", "xmax", "ymax"),
         )
         self.assertEqual(len(rows), 1)
+
+    def test_cells_are_center_aligned(self):
+        shapes = [
+            {
+                "label": "person",
+                "shape_type": "rectangle",
+                "points": [[1, 2], [3, 4]],
+                "score": 0.5,
+            }
+        ]
+        output_file = self._export(shapes)
+        from openpyxl import load_workbook
+
+        sheet = load_workbook(output_file).active
+        self.assertEqual(
+            [cell.value for cell in sheet[1]],
+            ["index", "name", "score", "xmin", "ymin", "xmax", "ymax"],
+        )
+        for row in sheet.iter_rows():
+            for cell in row:
+                self.assertEqual(cell.alignment.horizontal, "center")
+                self.assertEqual(cell.alignment.vertical, "center")

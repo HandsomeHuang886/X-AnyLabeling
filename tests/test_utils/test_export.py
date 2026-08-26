@@ -304,8 +304,16 @@ def test_xlsx_export_writes_one_file_per_image(tmp_path):
 
     sheet = load_workbook(str(out_file)).active
     rows = list(sheet.iter_rows(values_only=True))
-    assert rows[0] == ("name", "scores", "xmin", "ymin", "xmax", "ymax")
-    assert rows[1] == ("person", 0.86, 10, 20, 30, 40)
+    assert rows[0] == (
+        "index",
+        "name",
+        "score",
+        "xmin",
+        "ymin",
+        "xmax",
+        "ymax",
+    )
+    assert rows[1] == (1, "person", 0.86, 10, 20, 30, 40)
     popup_class.return_value.show_popup.assert_called()
     widget.close()
     app.processEvents()

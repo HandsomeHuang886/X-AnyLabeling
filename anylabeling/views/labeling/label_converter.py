@@ -1815,23 +1815,29 @@ class LabelConverter:
     def custom_to_xlsx(self, input_file, output_file):
         """Export rectangle detection boxes to an xlsx table.
 
-        Sheet columns: name, scores, xmin, ymin, xmax, ymax.
-        Shapes without a score leave the scores cell empty. A ``None``
-        input file writes a header-only workbook (no label available).
+        Sheet columns: index, name, score, xmin, ymin, xmax, ymax.
+        ``index`` numbers each exported box starting from 1. Shapes
+        without a score leave the score cell empty. A ``None`` input
+        file writes a header-only workbook (no label available).
         """
         data = self.read_json(input_file) if input_file else {}
         from openpyxl import Workbook
+        from openpyxl.styles import Alignment
 
         workbook = Workbook()
         sheet = workbook.active
         sheet.title = "Detections"
-        sheet.append(["name", "scores", "xmin", "ymin", "xmax", "ymax"])
+        sheet.append(
+            ["index", "name", "score", "xmin", "ymin", "xmax", "ymax"]
+        )
+        index = 0
         for shape in data.get("shapes", []):
             if shape.get("shape_type") != "rectangle":
                 continue
             points = shape.get("points") or []
             if len(points) < 2:
                 continue
+            index += 1
             xs = [point[0] for point in points]
             ys = [point[1] for point in points]
             score = shape.get("score")
@@ -1839,6 +1845,7 @@ class LabelConverter:
                 score = None
             sheet.append(
                 [
+                    index,
                     shape.get("label", ""),
                     score,
                     int(min(xs)),
@@ -1847,6 +1854,12 @@ class LabelConverter:
                     int(max(ys)),
                 ]
             )
+        # Center the content of every cell.
+        for row in sheet.iter_rows():
+            for cell in row:
+                cell.alignment = Alignment(
+                    horizontal="center", vertical="center"
+                )
         workbook.save(output_file)
 
     def write_empty_mask(
