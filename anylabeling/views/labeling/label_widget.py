@@ -53,6 +53,7 @@ from .utils.style import (
     get_panel_style,
     get_plain_text_edit_style,
     get_settings_button_style,
+    get_spinbox_style,
     get_toolbar_scroll_area_style,
 )
 from ...config import get_config, save_config
@@ -1034,6 +1035,13 @@ class LabelingWidget(LabelDialog):
                 "Save all top-level images in the current folder as PNG"
             ),
         )
+        slice_action = action(
+            self.tr("slice"),
+            self.slice_images,
+            None,
+            icon=None,
+            tip=self.tr("Slice top-level images into overlapping tiles"),
+        )
         save_crop = action(
             self.tr("Save Cropped Image"),
             lambda: utils.save_crop(self),
@@ -1844,6 +1852,7 @@ class LabelingWidget(LabelDialog):
             toggle_shape_lock=toggle_shape_lock,
             overview=overview,
             initialize=initialize,
+            slice_action=slice_action,
             save_visualization_image=save_visualization_image,
             save_visualization_video=save_visualization_video,
             undo_last_point=undo_last_point,
@@ -2117,6 +2126,7 @@ class LabelingWidget(LabelDialog):
             (
                 overview,
                 initialize,
+                slice_action,
                 None,
                 save_crop,
                 save_visualization_image,
@@ -3512,6 +3522,188 @@ class LabelingWidget(LabelDialog):
         if failed:
             logger.warning(
                 f"Initialize: failed to convert {len(failed)} file(s): "
+                f"{', '.join(failed)}"
+            )
+
+    def slice_images(self):
+        """Slice top-level images of the current directory into tiles."""
+        if not self.filename:
+            popup = Popup(
+                self.tr("Please load an image folder before proceeding!"),
+                self,
+                msec=3000,
+                icon=new_icon_path("warning", "svg"),
+            )
+            popup.show_popup(self, popup_height=36, position="center")
+            return
+
+        workdir = self.last_open_dir
+        if not workdir or not osp.isdir(workdir):
+            self.error_message(
+                self.tr("Slice"),
+                self.tr("Please open a directory first before using Slice."),
+            )
+            return
+
+        workdir = osp.abspath(workdir)
+        default_save_dir = osp.realpath(osp.join(workdir, "..", "slices"))
+
+        dialog = QtWidgets.QDialog(self)
+        dialog.setWindowTitle(self.tr("Slice Options"))
+        dialog.setMinimumWidth(500)
+        dialog.setStyleSheet(get_export_option_style())
+
+        layout = QtWidgets.QVBoxLayout()
+        layout.setContentsMargins(24, 24, 24, 24)
+        layout.setSpacing(16)
+
+        path_label = QtWidgets.QLabel(self.tr("Save Path"))
+        layout.addWidget(path_label)
+
+        path_input_layout = QtWidgets.QHBoxLayout()
+        path_input_layout.setSpacing(8)
+
+        path_edit = QtWidgets.QLineEdit()
+        path_edit.setText(default_save_dir)
+        path_edit.setPlaceholderText(self.tr("Select Save Directory"))
+
+        def browse_save_path():
+            path = QtWidgets.QFileDialog.getExistingDirectory(
+                self,
+                self.tr("Select Save Directory"),
+                path_edit.text(),
+                QtWidgets.QFileDialog.Option.DontUseNativeDialog,
+            )
+            if path:
+                path_edit.setText(path)
+
+        path_button = QtWidgets.QPushButton(self.tr("Browse"))
+        path_button.clicked.connect(browse_save_path)
+        path_button.setStyleSheet(get_cancel_btn_style())
+
+        path_input_layout.addWidget(path_edit)
+        path_input_layout.addWidget(path_button)
+        layout.addLayout(path_input_layout)
+
+        # Grid keeps spinboxes and buttons in the same right-side column.
+        grid = QtWidgets.QGridLayout()
+        grid.setHorizontalSpacing(12)
+        grid.setVerticalSpacing(12)
+        grid.setColumnStretch(0, 1)
+
+        slice_width_label = QtWidgets.QLabel(self.tr("Slice width:"))
+        slice_width_spin = QtWidgets.QSpinBox()
+        slice_width_spin.setRange(1, 100000)
+        slice_width_spin.setValue(768)
+        slice_width_spin.setStyleSheet(get_spinbox_style())
+        grid.addWidget(slice_width_label, 0, 0)
+        grid.addWidget(slice_width_spin, 0, 1)
+
+        slice_height_label = QtWidgets.QLabel(self.tr("Slice height:"))
+        slice_height_spin = QtWidgets.QSpinBox()
+        slice_height_spin.setRange(1, 100000)
+        slice_height_spin.setValue(768)
+        slice_height_spin.setStyleSheet(get_spinbox_style())
+        grid.addWidget(slice_height_label, 1, 0)
+        grid.addWidget(slice_height_spin, 1, 1)
+
+        overlap_width_label = QtWidgets.QLabel(self.tr("Overlap width ratio:"))
+        overlap_width_spin = QtWidgets.QDoubleSpinBox()
+        overlap_width_spin.setRange(0.0, 1.0)
+        overlap_width_spin.setDecimals(2)
+        overlap_width_spin.setSingleStep(0.05)
+        overlap_width_spin.setValue(0.25)
+        overlap_width_spin.setStyleSheet(get_spinbox_style())
+        grid.addWidget(overlap_width_label, 2, 0)
+        grid.addWidget(overlap_width_spin, 2, 1)
+
+        overlap_height_label = QtWidgets.QLabel(
+            self.tr("Overlap height ratio:")
+        )
+        overlap_height_spin = QtWidgets.QDoubleSpinBox()
+        overlap_height_spin.setRange(0.0, 1.0)
+        overlap_height_spin.setDecimals(2)
+        overlap_height_spin.setSingleStep(0.05)
+        overlap_height_spin.setValue(0.25)
+        overlap_height_spin.setStyleSheet(get_spinbox_style())
+        grid.addWidget(overlap_height_label, 3, 0)
+        grid.addWidget(overlap_height_spin, 3, 1)
+
+        cancel_button = QtWidgets.QPushButton(self.tr("Cancel"))
+        cancel_button.clicked.connect(dialog.reject)
+        cancel_button.setStyleSheet(get_cancel_btn_style())
+
+        ok_button = QtWidgets.QPushButton(self.tr("OK"))
+        ok_button.clicked.connect(dialog.accept)
+        ok_button.setStyleSheet(get_ok_btn_style())
+
+        button_layout = QtWidgets.QHBoxLayout()
+        button_layout.setContentsMargins(0, 4, 0, 0)
+        button_layout.setSpacing(8)
+        button_layout.addWidget(cancel_button)
+        button_layout.addWidget(ok_button)
+        grid.addLayout(button_layout, 4, 1)
+
+        layout.addLayout(grid)
+
+        dialog.setLayout(layout)
+        result = dialog.exec()
+        if not result:
+            return
+
+        save_dir = path_edit.text().strip()
+        if not save_dir:
+            self.error_message(
+                self.tr("Slice"), self.tr("Save path cannot be empty.")
+            )
+            return
+
+        os.makedirs(save_dir, exist_ok=True)
+
+        extensions = utils.get_supported_image_extensions()
+        try:
+            image_files = sorted(
+                osp.join(workdir, name)
+                for name in os.listdir(workdir)
+                if osp.isfile(osp.join(workdir, name))
+                and name.lower().endswith(tuple(extensions))
+            )
+        except OSError as e:
+            logger.error(f"Failed to list directory {workdir}: {e}")
+            image_files = []
+
+        if not image_files:
+            self.error_message(
+                self.tr("Slice"),
+                self.tr("No image files found in the current directory."),
+            )
+            return
+
+        total = 0
+        failed = []
+        for src in image_files:
+            count = utils.slice_image_to_tiles(
+                src,
+                save_dir,
+                slice_width_spin.value(),
+                slice_height_spin.value(),
+                overlap_width_spin.value(),
+                overlap_height_spin.value(),
+            )
+            if count:
+                total += count
+            else:
+                failed.append(osp.basename(src))
+
+        if total:
+            QtWidgets.QMessageBox.information(
+                self,
+                self.tr("Slice"),
+                self.tr("%s tile(s) saved to %s.") % (total, save_dir),
+            )
+        if failed:
+            logger.warning(
+                f"Slice: failed to process {len(failed)} file(s): "
                 f"{', '.join(failed)}"
             )
 

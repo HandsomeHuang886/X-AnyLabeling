@@ -36,6 +36,7 @@ from .image import (
     img_pil_to_data,
     get_supported_image_extensions,
     process_image_exif,
+    slice_image_to_tiles,
 )
 from .image_tags import normalize_image_tag, normalize_image_tags
 from ._io import io_open

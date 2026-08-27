@@ -59,6 +59,78 @@ def convert_image_to_png(src_path, dst_path):
         return False
 
 
+def _tile_positions(length, tile_size, step):
+    """Return tile top-left positions along one axis.
+
+    Positions start at 0 and advance by ``step`` while a full-size tile
+    still fits. If the image is not fully covered by the last grid tile,
+    an extra tile is anchored to the far edge, so every returned position
+    yields a tile that fits entirely within the image.
+    """
+    if length <= tile_size:
+        return [0]
+
+    positions = []
+    pos = 0
+    while pos + tile_size <= length:
+        positions.append(pos)
+        pos += step
+
+    if positions[-1] + tile_size < length:
+        positions.append(length - tile_size)
+    return positions
+
+
+def slice_image_to_tiles(
+    src_path,
+    dst_dir,
+    slice_width,
+    slice_height,
+    overlap_width_ratio,
+    overlap_height_ratio,
+):
+    """Slice an image into overlapping tiles and save each as PNG.
+
+    Tile size is fixed at ``slice_width`` x ``slice_height``. Tiles step
+    by ``(1 - overlap_ratio) * tile_size``; when a tile would run past
+    the right/bottom edge it is shifted back to stay inside the image,
+    enlarging the overlap with the previous tile. Tiles are named
+    ``<basename>_<x:06d>_<y:06d>.png`` using the top-left coordinate in
+    the original image. Returns the number of tiles written, or 0 if the
+    image could not be processed.
+    """
+    try:
+        ensure_pillow_heif_registered()
+        with PIL.Image.open(src_path) as img:
+            img = PIL.ImageOps.exif_transpose(img)
+            width, height = img.size
+    except Exception as e:
+        logger.error(f"Failed to open {src_path}: {e}")
+        return 0
+
+    step_x = max(1, int(round(slice_width * (1.0 - overlap_width_ratio))))
+    step_y = max(1, int(round(slice_height * (1.0 - overlap_height_ratio))))
+    xs = _tile_positions(width, slice_width, step_x)
+    ys = _tile_positions(height, slice_height, step_y)
+
+    base = osp.splitext(osp.basename(src_path))[0]
+    count = 0
+    with PIL.Image.open(src_path) as img:
+        img = PIL.ImageOps.exif_transpose(img)
+        for y in ys:
+            for x in xs:
+                right = min(x + slice_width, width)
+                lower = min(y + slice_height, height)
+                tile = img.crop((x, y, right, lower))
+                dst = osp.join(dst_dir, "%s_%06d_%06d.png" % (base, x, y))
+                try:
+                    tile.save(dst, format="PNG")
+                    count += 1
+                except Exception as e:
+                    logger.error(f"Failed to save {dst}: {e}")
+    return count
+
+
 def img_data_to_pil(img_data):
     ensure_pillow_heif_registered()
     f = io.BytesIO()
