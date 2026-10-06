@@ -112,6 +112,7 @@ class YOLO26_SAHI(Model):
             slice_width=self.slice_width,
             overlap_height_ratio=self.overlap_height_ratio,
             overlap_width_ratio=self.overlap_width_ratio,
+            perform_standard_pred=False,
             postprocess_match_threshold=self.nms_threshold,
             verbose=0,
         )
